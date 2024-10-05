@@ -11,16 +11,30 @@
     </style>
 </head>
 <body>
+    <label for="lagController">Lag client</label>
+    <input id="lagController" type="number"/>
     <canvas width="600" height="600">
 
     </canvas>
     <script type="module">
         import { io } from "https://cdn.socket.io/4.7.5/socket.io.esm.min.js";
         import { Game } from './index.js';
+        
+        
+     
+
+
         let state = {};
         const game = new Game();
         console.log(game);
-        
+
+        const lagController = document.getElementById('lagController');
+        lagController.addEventListener('input', (ev) => {
+            console.log('change lag: ', ev.target.value);
+            
+            game.fakeLag = ev.target.value;
+        })
+
         const socket = io('ws://localhost:3000');
         game.socket = socket;
         socket.on('GAME', (initalData) => {

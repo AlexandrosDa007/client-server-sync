@@ -15,6 +15,7 @@ class Game {
     socket = null;
     stateBuffer = [];
     applyingStateBuffer = null;
+    fakeLag = 0;
     constructor() {
     }
 
@@ -68,7 +69,7 @@ class Game {
             const _action = {...this.lastAction};
             setTimeout(() => {
                 this.socket.emit('INPUT', _action);
-            }, 500); // FAKE LAG 50ms
+            }, this.fakeLag); // FAKE LAG 50ms
             this.actions.push({
                 sequence: this.lastAction.sequence,
                 oldPosition: this.state.players[0].x,
