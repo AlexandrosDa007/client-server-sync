@@ -40,7 +40,6 @@ class Game {
             // apply stateBuffer
             this.isMoving = true;
             const newState = this.stateBuffer.pop();
-            this.applyingStateBuffer = newState;
             this.pixelsToWalk = Math.abs(newState.players[0].x - this.state.players[0].x) * 32;
             console.log('pixels to walk', this.pixelsToWalk);
             if (!this.pixelsToWalk) {
@@ -55,7 +54,8 @@ class Game {
                 oldPosition: this.state.players[0].x,
                 newPosition: newState.players[0].x,
             }
-            this.applyMovementFromReconciliation(this.actions[newState.players[0].lastProcessedSequence - 1], delta);
+            this.applyingStateBuffer = this.actions[newState.players[0].lastProcessedSequence - 1];
+            this.applyMovementFromReconciliation(this.applyingStateBuffer, delta);
             
             return;
         }
@@ -68,7 +68,7 @@ class Game {
             const _action = {...this.lastAction};
             setTimeout(() => {
                 this.socket.emit('INPUT', _action);
-            }, 50); // FAKE LAG 50ms
+            }, 500); // FAKE LAG 50ms
             this.actions.push({
                 sequence: this.lastAction.sequence,
                 oldPosition: this.state.players[0].x,
@@ -109,6 +109,9 @@ class Game {
 
     applyMovementFromReconciliation(action, delta) {
         // Smooth movement
+        if (!action.newPosition) {
+            debugger;
+        }
         const {oldPosition, newPosition} = action;
 
 
@@ -118,15 +121,18 @@ class Game {
         // we need to lerp between these two values
         // considering delta time as well and pixels to walk
         // TODO:
-        let currentPosition = this.lerp(oldPosition, newPosition, )
+        // let currentPosition = this.lerp(oldPosition, newPosition, )
 
 
 
-        const unitsToTravel = newState.players[0].x >= this.state.players[0].x ? 1 : - 1;
+        const unitsToTravel = newPosition >= this.state.players[0].x ? 1 : - 1;
         this.state.players[0].x += unitsToTravel / 32;
-        console.log('applying movement from reoc', this.state.players[0].x);
+        // console.log('applying movement from reoc', this.state.players[0].x);
         this.pixelsToWalk--;
         if (this.pixelsToWalk === 0) {
+            if (!Number.isInteger(this.state.players[0].x)) {
+                debugger;
+            }
             this.isMoving = false;
             this.pixelsToWalk = 32;
             this.applyingStateBuffer = null;
@@ -137,9 +143,12 @@ class Game {
     applyMovement(delta) {
         const speed = this.lastAction.key === 'right' ? 1 : this.lastAction.key === 'left' ? -1 : 0
         this.state.players[0].x += speed / 32;
-        console.log('applying movement', this.state.players[0].x);
+        // console.log('applying movement', this.state.players[0].x);
         this.pixelsToWalk--;
         if (this.pixelsToWalk === 0) {
+            if (!Number.isInteger(this.state.players[0].x)) {
+                debugger;
+            }
             this.isMoving = false;
             this.actions[this.lastAction.sequence - 1].newPosition = this.state.players[0].x;
             this.lastAction.key === 'none';
@@ -150,7 +159,9 @@ class Game {
     }
 
     updateState(newState) {
-        console.log('update state');
+        console.log('update state with last processed ', newState.players[0].lastProcessedSequence);
+        console.log('hello: ', this.actions);
+        
         if (this.actions[newState.players[0].lastProcessedSequence - 1].newPosition !== newState.players[0].x) {
             // Do Reconciliation
             console.log('reco');

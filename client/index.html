@@ -19,6 +19,8 @@
         import { Game } from './index.js';
         let state = {};
         const game = new Game();
+        console.log(game);
+        
         const socket = io('ws://localhost:3000');
         game.socket = socket;
         socket.on('GAME', (initalData) => {

@@ -49,7 +49,10 @@ httpServer.listen(3000, () => {
 
         // send
         if (hasUpdates) {
-            io.emit('GAME_UPDATE', db);
+            const _db = JSON.parse(JSON.stringify(db));
+            setTimeout(() => {
+                io.emit('GAME_UPDATE', _db);
+            }, 300);
             db.players.forEach(p => p.lastProcessedSequence = undefined);
         }
 
@@ -57,7 +60,7 @@ httpServer.listen(3000, () => {
     }
 
 
-    setInterval(loop, 100);
+    setInterval(loop, 1000);
 
 });
 
@@ -81,19 +84,22 @@ function movePlayer(player) {
                 break;
             }
         }
+
+        if (player.x === 13) {
+            player.x = 10;
+            player.lastProcessedSequence = inputBuffer.at(-1).sequence;
+            break;
+        }
+    
     }
 
-    if (player.x === 13) {
-        player.x = 10;
-        player.lastProcessedSequence = inputBuffer.at(-1).sequence;
-    }
-
+    
 
     if (oldX !== player.x) {
         player.lastProcessedSequence = inputBuffer.at(-1).sequence;
     }
 
-    console.log('server pos: ', player.x);
+    console.log('server pos: ', player.x, ' at time: ', new Date());
 
     player.inputBuffer = [];
 
