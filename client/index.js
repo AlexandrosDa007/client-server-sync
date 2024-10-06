@@ -16,18 +16,29 @@ class Game {
     stateBuffer = [];
     applyingStateBuffer = null;
     fakeLag = 0;
+    otherPlayers = [];
     constructor() {
+    }
+
+    getPlayer(state) {
+        return state.players.find(p => p.id === this.socket.id);
     }
 
     start(initialState) {
         this.canvas = document.querySelector('canvas');
         this.ctx = this.canvas.getContext('2d');
         this.state = {...initialState};
+        this.state.players.forEach(p => {
+            if (p.id !== this.socket.id) {
+                this.otherPlayers.push(new OtherPlayer(p.id, {...initialState}))
+            }
+        })
         window.requestAnimationFrame(this.loop.bind(this));
-        console.log('player pos initail ', this.state.players[0].x);
+        console.log('player pos initail ', this.getPlayer(this.state).x);
     }
 
     update(delta) {
+        this.otherPlayers.forEach(p => p.update(delta));
         if (this.applyingStateBuffer) {
             this.applyMovementFromReconciliation(this.applyingStateBuffer, delta);
             return;
@@ -41,7 +52,7 @@ class Game {
             // apply stateBuffer
             this.isMoving = true;
             const newState = this.stateBuffer.pop();
-            this.pixelsToWalk = Math.abs(newState.players[0].x - this.state.players[0].x) * 32;
+            this.pixelsToWalk = Math.abs(this.getPlayer(newState).x - this.getPlayer(this.state).x) * 32;
             console.log('pixels to walk', this.pixelsToWalk);
             if (!this.pixelsToWalk) {
                 this.isMoving = false;
@@ -50,12 +61,12 @@ class Game {
                 console.log('No action returning');
                 return;
             }
-            this.actions[newState.players[0].lastProcessedSequence - 1] = {
-                sequence: newState.players[0].lastProcessedSequence,
-                oldPosition: this.state.players[0].x,
-                newPosition: newState.players[0].x,
+            this.actions[this.getPlayer(newState).lastProcessedSequence - 1] = {
+                sequence: this.getPlayer(newState).lastProcessedSequence,
+                oldPosition: this.getPlayer(this.state).x,
+                newPosition: this.getPlayer(newState).x,
             }
-            this.applyingStateBuffer = this.actions[newState.players[0].lastProcessedSequence - 1];
+            this.applyingStateBuffer = this.actions[this.getPlayer(newState).lastProcessedSequence - 1];
             this.applyMovementFromReconciliation(this.applyingStateBuffer, delta);
             
             return;
@@ -72,8 +83,8 @@ class Game {
             }, this.fakeLag); // FAKE LAG 50ms
             this.actions.push({
                 sequence: this.lastAction.sequence,
-                oldPosition: this.state.players[0].x,
-                newPosition: this.predictNewPosition(this.state.players[0].x, _action.key),
+                oldPosition: this.getPlayer(this.state).x,
+                newPosition: this.predictNewPosition(this.getPlayer(this.state).x, _action.key),
             });
 
             if (this.lastKeyPressed !== 'none') {
@@ -126,12 +137,12 @@ class Game {
 
 
 
-        const unitsToTravel = newPosition >= this.state.players[0].x ? 1 : - 1;
-        this.state.players[0].x += unitsToTravel / 32;
+        const unitsToTravel = newPosition >= this.getPlayer(this.state).x ? 1 : - 1;
+        this.getPlayer(this.state).x += unitsToTravel / 32;
         // console.log('applying movement from reoc', this.state.players[0].x);
         this.pixelsToWalk--;
         if (this.pixelsToWalk === 0) {
-            if (!Number.isInteger(this.state.players[0].x)) {
+            if (!Number.isInteger(this.getPlayer(this.state).x)) {
                 debugger;
             }
             this.isMoving = false;
@@ -143,15 +154,15 @@ class Game {
 
     applyMovement(delta) {
         const speed = this.lastAction.key === 'right' ? 1 : this.lastAction.key === 'left' ? -1 : 0
-        this.state.players[0].x += speed / 32;
+        this.getPlayer(this.state).x += speed / 32;
         // console.log('applying movement', this.state.players[0].x);
         this.pixelsToWalk--;
         if (this.pixelsToWalk === 0) {
-            if (!Number.isInteger(this.state.players[0].x)) {
+            if (!Number.isInteger(this.getPlayer(this.state).x)) {
                 debugger;
             }
             this.isMoving = false;
-            this.actions[this.lastAction.sequence - 1].newPosition = this.state.players[0].x;
+            this.actions[this.lastAction.sequence - 1].newPosition = this.getPlayer(this.state).x;
             this.lastAction.key === 'none';
             this.pixelsToWalk = 32;
         }
@@ -160,20 +171,44 @@ class Game {
     }
 
     updateState(newState) {
-        console.log('update state with last processed ', newState.players[0].lastProcessedSequence);
+        console.log('update state with last processed ', this.getPlayer(newState).lastProcessedSequence);
         console.log('hello: ', this.actions);
+
+        newState.players.forEach(p => {
+
+            // for player
+            if (p.id === this.socket.id && this.getPlayer(newState).lastProcessedSequence - 1) {
+                if (this.actions[this.getPlayer(newState).lastProcessedSequence - 1].newPosition !== this.getPlayer(newState).x) {
+                    // Do Reconciliation
+                    console.log('reco');
+                    this.stateBuffer.unshift(newState);
+                }
+            
+            } else {
+                // for other players
+
+                if (!this.otherPlayers.find(player => player.id === p.id)) {
+                    this.otherPlayers.push(new OtherPlayer(p.id, {...this.state}));
+                } else {
+
+
+                    this.otherPlayers.find(player => player.id === p.id).updateState(newState);
+                    
+
+
+                }
+            }
+
+
+
+        })
         
-        if (this.actions[newState.players[0].lastProcessedSequence - 1].newPosition !== newState.players[0].x) {
-            // Do Reconciliation
-            console.log('reco');
-            this.stateBuffer.unshift(newState);
-        }
     }
 
     draw() {
         this.ctx.clearRect(0,0, 600, 600);
         this.state.players.forEach(player => {
-            this.ctx.fillStyle = player.color;
+            this.ctx.fillStyle = player.id === this.socket.id ? player.color : 'blue';
             this.ctx.beginPath();
             this.ctx.arc(
                 player.x * 32,
@@ -209,4 +244,133 @@ class Game {
 
 export {
     Game
+}
+
+class OtherPlayer {
+    id;
+    lastAction = {key: null, sequence: 0};
+    actions = [];
+    isMoving = false;
+    pixelsToWalk = 32;
+    stateBuffer = [];
+    applyingStateBuffer = null;
+    state;
+
+    constructor(id, state) {
+        this.id = id;
+        this.state = {...state};
+    }
+    
+
+    getPlayer(state) {
+        return state.players.find(p => p.id === this.id);
+    }
+
+    update(delta) {
+        if (this.applyingStateBuffer) {
+            this.applyMovementFromReconciliation(this.applyingStateBuffer,delta);
+            return;
+        }
+
+        // if (this.isMoving) {
+        //     this.applyMovement(delta);
+        //     return;
+        // }
+
+        if (this.stateBuffer.length) {
+            this.isMoving = true;
+            const newState = this.stateBuffer.pop();
+            this.pixelsToWalk = Math.abs(this.getPlayer(newState).x - this.getPlayer(this.state).x) * 32;
+            if (!this.pixelsToWalk) {
+                this.isMoving = false;
+                this.applyingStateBuffer = null;
+                this.pixelsToWalk = 32;
+                return;
+            }
+
+            this.actions[this.getPlayer(newState).lastProcessedSequence - 1] = {
+                sequence: this.getPlayer(newState).lastProcessedSequence,
+                oldPosition: this.getPlayer(this.state).x,
+                newPosition: this.getPlayer(newState).x,
+            }
+            this.applyingStateBuffer = this.actions[this.getPlayer(newState).lastProcessedSequence - 1];
+            this.applyMovementFromReconciliation(this.applyingStateBuffer, delta);
+            return;
+        }
+    }
+
+    applyMovementFromReconciliation(action, delta) {
+        // Smooth movement
+        if (!action.newPosition) {
+            debugger;
+        }
+        const {oldPosition, newPosition} = action;
+
+
+        const movementSpeed = 0.15;
+        const deltaTime = delta / 1000;
+
+        // we need to lerp between these two values
+        // considering delta time as well and pixels to walk
+        // TODO:
+        // let currentPosition = this.lerp(oldPosition, newPosition, )
+
+
+
+        const unitsToTravel = newPosition >= this.getPlayer(this.state).x ? 1 : - 1;
+        this.getPlayer(this.state).x += unitsToTravel / 32;
+        // console.log('applying movement from reoc', this.state.players[0].x);
+        this.pixelsToWalk--;
+        if (this.pixelsToWalk === 0) {
+            if (!Number.isInteger(this.getPlayer(this.state).x)) {
+                debugger;
+            }
+            this.isMoving = false;
+            this.pixelsToWalk = 32;
+            this.applyingStateBuffer = null;
+        }
+    }
+
+    // applyMovement(delta) {
+    //     const speed = this.lastAction.key === 'right' ? 1 : this.lastAction.key === 'left' ? -1 : 0
+    //     this.getPlayer(this.state).x += speed / 32;
+    //     // console.log('applying movement', this.state.players[0].x);
+    //     this.pixelsToWalk--;
+    //     if (this.pixelsToWalk === 0) {
+    //         if (!Number.isInteger(this.getPlayer(this.state).x)) {
+    //             debugger;
+    //         }
+    //         this.isMoving = false;
+    //         this.actions[this.lastAction.sequence - 1].newPosition = this.getPlayer(this.state).x;
+    //         this.lastAction.key === 'none';
+    //         this.pixelsToWalk = 32;
+    //     }
+
+    //     // console.log('player pos: ',this.state.players[0].x);
+    // }
+
+
+    updateState(newState) {
+
+        // compare old and new state
+
+
+
+
+        // if (!(this.getPlayer(newState).lastProcessedSequence - 1)) {
+        //     return;
+        // }
+        // const lastProcessedSequence = this.getPlayer(this.state)
+        // const newPosition = this.getPlayer(newState).x;
+        // const lastProcessedPosition = this.getPlayer(this.state).x
+        if (!this.actions.length) {
+            this.stateBuffer.unshift(newState);
+            return;
+        }
+        if (this.actions.at(-1).newPosition !== this.getPlayer(newState).x) {
+            // Do Reconciliation
+            console.log('reco other player: ', this.getPlayer(newState).id);
+            this.stateBuffer.unshift(newState);
+        }
+    }
 }
