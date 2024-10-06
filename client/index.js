@@ -1,3 +1,5 @@
+import { OtherPlayer } from "./OtherPlayer.js";
+
 class Game {
     state;
     canvas;
@@ -16,18 +18,39 @@ class Game {
     stateBuffer = [];
     applyingStateBuffer = null;
     fakeLag = 0;
+    otherPlayers = [];
     constructor() {
+    }
+
+    getPlayer(state) {
+        return state.players.find(p => p.id === this.socket.id);
     }
 
     start(initialState) {
         this.canvas = document.querySelector('canvas');
         this.ctx = this.canvas.getContext('2d');
         this.state = {...initialState};
+        this.state.players.forEach(p => {
+            if (p.id !== this.socket.id) {
+                this.otherPlayers.push(new OtherPlayer(p.id, {...p}))
+            }
+        })
         window.requestAnimationFrame(this.loop.bind(this));
-        console.log('player pos initail ', this.state.players[0].x);
+        console.log('player pos initail ', this.getPlayer(this.state).x);
+    }
+
+    addAction(action) {
+        const sequence = action.sequence;
+        this.actions = this.actions.filter(a => {
+            console.log('lalalal: ', a.sequence < sequence - 10);
+            
+            return Math.abs(sequence - a.sequence) < 10;
+        });
+        this.actions.push(action);
     }
 
     update(delta) {
+        this.otherPlayers.forEach(p => p.update(delta));
         if (this.applyingStateBuffer) {
             this.applyMovementFromReconciliation(this.applyingStateBuffer, delta);
             return;
@@ -41,7 +64,7 @@ class Game {
             // apply stateBuffer
             this.isMoving = true;
             const newState = this.stateBuffer.pop();
-            this.pixelsToWalk = Math.abs(newState.players[0].x - this.state.players[0].x) * 32;
+            this.pixelsToWalk = Math.abs(this.getPlayer(newState).x - this.getPlayer(this.state).x) * 32;
             console.log('pixels to walk', this.pixelsToWalk);
             if (!this.pixelsToWalk) {
                 this.isMoving = false;
@@ -50,12 +73,12 @@ class Game {
                 console.log('No action returning');
                 return;
             }
-            this.actions[newState.players[0].lastProcessedSequence - 1] = {
-                sequence: newState.players[0].lastProcessedSequence,
-                oldPosition: this.state.players[0].x,
-                newPosition: newState.players[0].x,
-            }
-            this.applyingStateBuffer = this.actions[newState.players[0].lastProcessedSequence - 1];
+            this.addAction({
+                sequence: this.getPlayer(newState).lastProcessedSequence,
+                oldPosition: this.getPlayer(this.state).x,
+                newPosition: this.getPlayer(newState).x,
+            });
+            this.applyingStateBuffer = this.getActionBySequence(this.getPlayer(newState).lastProcessedSequence);
             this.applyMovementFromReconciliation(this.applyingStateBuffer, delta);
             
             return;
@@ -70,10 +93,10 @@ class Game {
             setTimeout(() => {
                 this.socket.emit('INPUT', _action);
             }, this.fakeLag); // FAKE LAG 50ms
-            this.actions.push({
+            this.addAction({
                 sequence: this.lastAction.sequence,
-                oldPosition: this.state.players[0].x,
-                newPosition: this.predictNewPosition(this.state.players[0].x, _action.key),
+                oldPosition: this.getPlayer(this.state).x,
+                newPosition: this.predictNewPosition(this.getPlayer(this.state).x, _action.key),
             });
 
             if (this.lastKeyPressed !== 'none') {
@@ -126,12 +149,12 @@ class Game {
 
 
 
-        const unitsToTravel = newPosition >= this.state.players[0].x ? 1 : - 1;
-        this.state.players[0].x += unitsToTravel / 32;
+        const unitsToTravel = newPosition >= this.getPlayer(this.state).x ? 1 : - 1;
+        this.getPlayer(this.state).x += unitsToTravel / 32;
         // console.log('applying movement from reoc', this.state.players[0].x);
         this.pixelsToWalk--;
         if (this.pixelsToWalk === 0) {
-            if (!Number.isInteger(this.state.players[0].x)) {
+            if (!Number.isInteger(this.getPlayer(this.state).x)) {
                 debugger;
             }
             this.isMoving = false;
@@ -143,15 +166,16 @@ class Game {
 
     applyMovement(delta) {
         const speed = this.lastAction.key === 'right' ? 1 : this.lastAction.key === 'left' ? -1 : 0
-        this.state.players[0].x += speed / 32;
+        this.getPlayer(this.state).x += speed / 32;
         // console.log('applying movement', this.state.players[0].x);
         this.pixelsToWalk--;
         if (this.pixelsToWalk === 0) {
-            if (!Number.isInteger(this.state.players[0].x)) {
+            if (!Number.isInteger(this.getPlayer(this.state).x)) {
                 debugger;
             }
             this.isMoving = false;
-            this.actions[this.lastAction.sequence - 1].newPosition = this.state.players[0].x;
+            
+            this.getActionBySequence(this.lastAction.sequence).newPosition = this.getPlayer(this.state).x;
             this.lastAction.key === 'none';
             this.pixelsToWalk = 32;
         }
@@ -159,25 +183,64 @@ class Game {
         // console.log('player pos: ',this.state.players[0].x);
     }
 
+    getActionBySequence(sequence) {
+        return this.actions.find(item => item.sequence === sequence);
+    }
+
     updateState(newState) {
-        console.log('update state with last processed ', newState.players[0].lastProcessedSequence);
+        console.log('update state with last processed ', this.getPlayer(newState).lastProcessedSequence);
         console.log('hello: ', this.actions);
+
+        newState.players.forEach(p => {
+
+            // for player
+            if (p.id === this.socket.id && this.getPlayer(newState).lastProcessedSequence ) {
+                if (!this.getActionBySequence(this.getPlayer(newState).lastProcessedSequence)) {
+                    debugger
+                }
+                if (this.getActionBySequence(this.getPlayer(newState).lastProcessedSequence).newPosition !== this.getPlayer(newState).x) {
+                    // Do Reconciliation
+                    console.log('recos');
+                    this.stateBuffer.unshift(newState);
+                }
+            
+            } else {
+                // for other players
+
+                if (!this.otherPlayers.find(player => player.id === p.id)) {
+                    console.log('hehe');
+                    
+                    this.otherPlayers.push(new OtherPlayer(p.id, JSON.parse(JSON.stringify(p))));
+                } else {
+
+
+                    this.otherPlayers.find(player => player.id === p.id).updateState(JSON.parse(JSON.stringify(p)));
+                    
+
+
+                }
+            }
+
+
+
+        })
         
-        if (this.actions[newState.players[0].lastProcessedSequence - 1].newPosition !== newState.players[0].x) {
-            // Do Reconciliation
-            console.log('reco');
-            this.stateBuffer.unshift(newState);
-        }
     }
 
     draw() {
         this.ctx.clearRect(0,0, 600, 600);
         this.state.players.forEach(player => {
-            this.ctx.fillStyle = player.color;
+
+            const isPlayer = player.id === this.socket.id;
+            const color = isPlayer ? player.color : 'blue';
+            const x = isPlayer ? player.x : this.otherPlayers.find(_p => _p.id === player.id).state.x;
+            const y = isPlayer ? player.y : this.otherPlayers.find(_p => _p.id === player.id).state.y;
+
+            this.ctx.fillStyle = color;
             this.ctx.beginPath();
             this.ctx.arc(
-                player.x * 32,
-                player.y * 32,
+                x * 32,
+                y * 32,
                 32,
                 0,
                 2 * Math.PI

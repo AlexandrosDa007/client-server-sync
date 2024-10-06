@@ -52,7 +52,7 @@ httpServer.listen(3000, () => {
             const _db = JSON.parse(JSON.stringify(db));
             setTimeout(() => {
                 io.emit('GAME_UPDATE', _db);
-            }, 300);
+            }, 0);
             db.players.forEach(p => p.lastProcessedSequence = undefined);
         }
 
